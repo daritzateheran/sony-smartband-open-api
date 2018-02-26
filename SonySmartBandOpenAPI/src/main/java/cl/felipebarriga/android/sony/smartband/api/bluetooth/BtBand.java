@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 
 import cl.felipebarriga.android.sony.smartband.api.bluetooth.profiles.AADeviceServiceProfile;
 import cl.felipebarriga.android.sony.smartband.api.bluetooth.profiles.AHServiceProfile;
@@ -31,6 +32,7 @@ public class BtBand implements BtBridgeListener {
 
     private BtBridge mBtBridge;
     private Context mContext;
+    private Semaphore mSemaphore;
 
     ArrayList<BtBandListener> mListeners = new ArrayList<>();
 
@@ -76,6 +78,7 @@ public class BtBand implements BtBridgeListener {
         mContext = context;
         mBtBridge = new BtBridge( mContext );
         mBtBridge.addListener( this );
+        mSemaphore = new Semaphore(1);
     }
 
     private DescriptorInfo getDescriptorInfo( BluetoothGattDescriptor descriptor ) {
@@ -143,7 +146,9 @@ public class BtBand implements BtBridgeListener {
         }
         Log.d( CLASS, "updateNotification: " + getDescriptorInfo( descriptor ) );
 
+        mSemaphore.acquireUninterruptibly();
         if( !mBtBridge.writeDescriptor( descriptor ) ) {
+            mSemaphore.release();
             Log.e( CLASS, "updateNotification: success = false " + getDescriptorInfo( descriptor ) );
         }
     }
@@ -206,9 +211,13 @@ public class BtBand implements BtBridgeListener {
         Log.i( CLASS, "executeAction: action=" + action.mAction.name() + " type=" + type.name() );
 
         if( type.equals( BtAction.Type.READ_CHAR ) ) {
-            mBtBridge.readCharacteristic( readGatt( action.getServiceUUID(), action.getCharacteristicUUID() ) );
+            mSemaphore.acquireUninterruptibly();
+            if (!mBtBridge.readCharacteristic( readGatt( action.getServiceUUID(), action.getCharacteristicUUID() ) )) {
+                mSemaphore.release();
+            }
         } else if( type.equals( BtAction.Type.WRITE_CHAR ) ) {
-            mBtBridge.writeCharacteristic(
+            mSemaphore.acquireUninterruptibly();
+            if (!mBtBridge.writeCharacteristic(
                     setValue(
                             action.getServiceUUID(),
                             action.getCharacteristicUUID(),
@@ -216,7 +225,9 @@ public class BtBand implements BtBridgeListener {
                             action.getFormat(),
                             0
                     )
-            );
+            )) {
+                mSemaphore.release();
+            }
         } else if( type.equals( BtAction.Type.ENABLE_NOTIFICATION ) ) {
             updateNotification( action, true );
         } else if( type.equals( BtAction.Type.DISABLE_NOTIFICATION ) ) {
@@ -454,6 +465,7 @@ public class BtBand implements BtBridgeListener {
     }
 
     public void onCharacteristicRead( BluetoothGattCharacteristic characteristic ) {
+        mSemaphore.release();
         BluetoothGattService service = characteristic.getService();
         BaseProfile serviceProfile = Profiles.getService( service.getUuid() );
 
@@ -496,6 +508,8 @@ public class BtBand implements BtBridgeListener {
     }
 
     public void onCharacteristicWrite( BluetoothGattCharacteristic characteristic ) {
+        mSemaphore.release();
+
         Log.d( CLASS, "onCharacteristicWrite: " + getCharacteristicInfo( characteristic ) );
         processQueue();
     }
@@ -508,6 +522,8 @@ public class BtBand implements BtBridgeListener {
     // TODO: Add callbacks
     // TODO: track in a better way if a notification is enabled
     public void onDescriptorWrite( BluetoothGattCharacteristic characteristic, BluetoothGattDescriptor descriptor ) {
+        mSemaphore.release();
+
         BluetoothGattService service = characteristic.getService();
         BaseProfile serviceProfile = Profiles.getService( service.getUuid() );
 
