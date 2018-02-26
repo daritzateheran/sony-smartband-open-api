@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.content.Context;
+import android.os.Handler;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ public class BtBand implements BtBridgeListener {
 
     private BtBridge mBtBridge;
     private Context mContext;
+    private Handler mHandler;
     private Semaphore mSemaphore;
 
     ArrayList<BtBandListener> mListeners = new ArrayList<>();
@@ -79,6 +81,7 @@ public class BtBand implements BtBridgeListener {
         mBtBridge = new BtBridge( mContext );
         mBtBridge.addListener( this );
         mSemaphore = new Semaphore(1);
+        mHandler = new Handler();
     }
 
     private DescriptorInfo getDescriptorInfo( BluetoothGattDescriptor descriptor ) {
@@ -237,14 +240,19 @@ public class BtBand implements BtBridgeListener {
         }
     }
 
-    public void onConnectionStateChange( BtBridge.Status newStatus ) {
+    public void onConnectionStateChange( final BtBridge.Status newStatus ) {
         if( newStatus.equals( BtBridge.Status.CONNECTED ) ) {
             mBtBridge.discoverServices();
         }
 
-        for( BtBandListener listener : mListeners ) {
-            listener.onConnectionStateChange( newStatus );
-        }
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                for( BtBandListener listener : mListeners ) {
+                    listener.onConnectionStateChange( newStatus );
+                }
+            }
+        });
     }
 
     public void onServicesDiscovered( List<BluetoothGattService> services ) {
@@ -267,9 +275,14 @@ public class BtBand implements BtBridgeListener {
             }
         }
 
-        for( BtBandListener listener : mListeners ) {
-            listener.onServicesDiscovered( );
-        }
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                for( BtBandListener listener : mListeners ) {
+                    listener.onServicesDiscovered( );
+                }
+            }
+        });
     }
 
     private void handleDeviceInfoFirmwareRevision( BluetoothGattCharacteristic characteristic ) {
@@ -464,47 +477,58 @@ public class BtBand implements BtBridgeListener {
         }
     }
 
-    public void onCharacteristicRead( BluetoothGattCharacteristic characteristic ) {
+    public void onCharacteristicRead( final BluetoothGattCharacteristic characteristic ) {
         mSemaphore.release();
+
         BluetoothGattService service = characteristic.getService();
-        BaseProfile serviceProfile = Profiles.getService( service.getUuid() );
+        final BaseProfile serviceProfile = Profiles.getService( service.getUuid() );
 
         Log.d( CLASS, "onCharacteristicRead: " + getCharacteristicInfo( characteristic ) );
-        if( serviceProfile.getClass().equals( BatteryProfile.class ) ) {
-            handleBatteryCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( AHServiceProfile.class ) ) {
-            handleAHServiceCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( DeviceInformationProfile.class ) ) {
-            handleDeviceInfoCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( AADeviceServiceProfile.class ) ) {
-            handleAADeviceServiceCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( GenericAccessProfile.class ) ) {
-            handleGenericAccessCallback( characteristic );
-        } else {
-            Log.w( CLASS, "onCharacteristicRead: unhandled event. class=" + serviceProfile.getClass() );
-        }
-        processQueue();
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if( serviceProfile.getClass().equals( BatteryProfile.class ) ) {
+                    handleBatteryCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( AHServiceProfile.class ) ) {
+                    handleAHServiceCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( DeviceInformationProfile.class ) ) {
+                    handleDeviceInfoCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( AADeviceServiceProfile.class ) ) {
+                    handleAADeviceServiceCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( GenericAccessProfile.class ) ) {
+                    handleGenericAccessCallback( characteristic );
+                } else {
+                    Log.w( CLASS, "onCharacteristicRead: unhandled event. class=" + serviceProfile.getClass() );
+                }
+                processQueue();
+            }
+        });
     }
 
-    public void onCharacteristicChanged( BluetoothGattCharacteristic characteristic ) {
+    public void onCharacteristicChanged( final BluetoothGattCharacteristic characteristic ) {
         BluetoothGattService service = characteristic.getService();
-        BaseProfile serviceProfile = Profiles.getService( service.getUuid() );
+        final BaseProfile serviceProfile = Profiles.getService( service.getUuid() );
 
         Log.d( CLASS, "onCharacteristicChanged: " + getCharacteristicInfo( characteristic ) );
-        if( serviceProfile.getClass().equals( BatteryProfile.class ) ) {
-            handleBatteryCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( AHServiceProfile.class ) ) {
-            handleAHServiceCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( DeviceInformationProfile.class ) ) {
-            handleDeviceInfoCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( AADeviceServiceProfile.class ) ) {
-            handleAADeviceServiceCallback( characteristic );
-        } else if( serviceProfile.getClass().equals( GenericAccessProfile.class ) ) {
-            handleGenericAccessCallback( characteristic );
-        } else {
-            Log.w( CLASS, "onCharacteristicChanged: unhandled event. class=" + serviceProfile.getClass() );
-        }
-        processQueue();
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if( serviceProfile.getClass().equals( BatteryProfile.class ) ) {
+                    handleBatteryCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( AHServiceProfile.class ) ) {
+                    handleAHServiceCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( DeviceInformationProfile.class ) ) {
+                    handleDeviceInfoCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( AADeviceServiceProfile.class ) ) {
+                    handleAADeviceServiceCallback( characteristic );
+                } else if( serviceProfile.getClass().equals( GenericAccessProfile.class ) ) {
+                    handleGenericAccessCallback( characteristic );
+                } else {
+                    Log.w( CLASS, "onCharacteristicChanged: unhandled event. class=" + serviceProfile.getClass() );
+                }
+                processQueue();
+            }
+        });
     }
 
     public void onCharacteristicWrite( BluetoothGattCharacteristic characteristic ) {
